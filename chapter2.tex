@@ -1,0 +1,223 @@
+\chapter{Implementation of Adaptive Integration Method for Free Energy Calculations in Molecular Systems}
+CA Mirabzadeh, F. Marty Ytreberg
+
+\begin{center}
+    To be submitted in \textit{PeerJ} — the Journal of Life and Environmental Sciences
+\end{center}
+
+\section*{Abstract}
+Estimating free energy differences by computer simulation is useful for a wide variety of applications such as creating drug designs and for understanding how amino-acid mutations modify protein interactions. However, calculating free energy differences remains challenging and often requires extensive trial and error and very long simulation times in order to achieve converged results. Here, we present an implementation of the adaptive integration method (AIM) that was tested on two molecular systems and validated by comparing results from AIM to those from a suite of standard methods. The model systems tested here include calculating the solvation free energy of methane, and the free energy of mutating the peptide GAG to GVG. We show that AIM is more efficient than standard methods for these test cases, that is, AIM results converge to a higher level of accuracy and precision for a given simulation time.
+
+\section{Introduction}
+
+Measuring free energy differences using computer simulations can be computationally expensive, yet is useful for many different applications (see e.g., \cite{Mobley2013,Zhan2013,Zhan2015,Wichman2016,Chodera2011a, SteinBrecher2010, Cournia2017, Miller2014, Petukh2015}) such as determining protein conformational preferences or for virtual screening in drug design \cite{Zhan2015, SteinBrecher2010, Chodera2011a}. Of specific relevance to the current study is that free energy calculations allow for prediction of how amino acid mutations will modify protein-protein binding \cite{Wichman2016, Zhan2013, Miller2014, Petukh2015}. We are particularly interested in developing and implementing efficient methods for calculating free energy differences and using them to understand protein evolution and protein-protein binding. 
+
+For this report, we have implemented the adaptive integration method (AIM), introduced by Fashnacht et al. \cite{Fasnacht2004}, for use in the GROMACS \cite{Berendsen1995} molecular dynamics simulation package. Though there are many free energy methods for molecular systems (see e.g., \cite{Kofke2005,Goncalves2004,Lyubartsev1996, Shirts2007,Klimovich2015,Chodera2011}), in previous studies AIM has shown promise to provide high quality, precise and efficient estimates of binding free energies\cite{Ytreberg2006}. AIM is an adaptive sampling method that continuously improves the estimate for free energy during the simulation.  AIM uses Monte Carlo to randomly sample $\lambda$ space in order to obtain numerical estimates of the free energy differences. The algorithm actively ``learns'' points of high variation along the reaction pathway and increases sampling in those areas.
+
+For comparison with other free energy methods we used the Python tool, alchemical-analysis.py \cite{Klimovich2015}, which is part of the Pymbar \cite{Shirts2008} package. The alchemical-analysis tool takes the output from molecular dynamics simulations and estimates the free energy using many different methods, including the Bennett acceptance ratio (BAR), multistate Bennett acceptance ratio (MBAR), thermodynamic integration (TI) and exponential averaging (IEXP, DEXP). Exponential averaging is known to be noisy, biased and dependent on the tails of the distribution of $\lambda$ states \cite{Bruckner2011,Shirts2005}. Bennett acceptance ratio and multistate Bennett acceptance ratio have been shown to be exceptionally accurate with less $\lambda$ states required\cite{Shirts2005}. Thermodynamic integration can be biased by the chosen method of integration. Some of that bias can be removed by using cubic-spline interpolation or more complex integration estimators\cite{Shirts2005, Shyu2009}.
+
+For the current study we chose two molecular systems that have well-documented results and are important starting points for biomolecular free energy studies. First, we calculated the solvation free energy of methane. Simulations were performed and the free energies were calculated using the standard methods provided by alchemical-analysis. Simulations were also performed using AIM and results compared to standard simulations. Once we were confident in our results and our strategy, we calculated the free energy of mutating GAG to GVG in water. For both systems, we found that AIM produces free energy estimates that are within statistical uncertainty of standard methods but with greater efficiency (i.e., more accurate for a given simulation time).
+
+\section{Methods}
+
+For this study we performed alchemical free energy simulations where the system is changed from a reference state to an end state by constructing a reaction pathway that either adds or removes a small molecule of interest. Such alchemical simulations are non-physical, thus the simulation does not represent what would occur naturally. Since the free energy is a state variable, it is independent of the path taken, and we are free to provide any path we wish. To perform these simulations the reaction pathway is divided into many separate, non-physical, $\lambda$ states between a reference state and an end state. The $\lambda$ states represent the progression along a reaction pathway as the reference state transforms into the end state. 
+
+Like most methods used to calculate free energies we start from the free energy identity,
+
+\begin{equation}\label{eq:free_id}
+    F = U - TS
+\end{equation}
+
+Where $U$ is the potential energy, $T$ is the temperature and $S$ is the entropy of the system.
+
+For free energy differences we generalize the formulation of the change in free energy by separating calculations into two, non-overlapping, thermodynamic end states, $A$ and $B$, at constant temperature $T$,
+
+\begin{equation}
+    \Delta F_{A \rightarrow B} = F_{B} - F_{A}= \Delta U - T \Delta S
+\end{equation}
+
+Where $\Delta F$ is the change in free energy, $\Delta U$ is the change in potential energy and $\Delta S$ is the change in entropy of the system.
+
+Derived from statistical mechanics, the free energy difference between the two end states, A and B, of the system is the log of the ratio of probabilities related to the energy states, $U_{A}(\vec{x})$ and $U_{B}(\vec{x})$,
+
+\begin{equation}\label{eq:free}
+    \Delta F = -k_{B}T \ln{\frac{Z[U_{B}(\vec{x})]}{Z[U_{A}(\vec{x})]}}
+\end{equation}
+
+Where $k_{B}$ is the Boltzmann constant, T is the system temperature. $Z[U(\vec{x})]$ is the partition function for the energy states, $U_{A}(\vec{x})$ and $U_{B}(\vec{x})$, where $\vec{x}$ is the vector of configuration coordinates,
+
+\begin{equation}\label{eq:part}
+    Z[U(\vec{x})] = \int dx \exp{(-\beta U(\vec{x})})
+\end{equation}
+
+Here we have substituted $\beta = \frac{1}{k_{B}T}$. Computationally, we calculate free energy differences between end states by sampling molecular dynamics simulations along a reaction pathway of intermediate states, defined by $\lambda$, such that,
+
+\begin{equation}
+    0 \leq \lambda \leq 1
+\end{equation}
+
+This pathway connects the two end states of the system. In the case of poor overlap, where the end states may be separated by a high energy barrier, $|U_{B} - U_{A}| \gg k_{B}T$, this pathway mitigates the otherwise very slow convergence of free energy estimates \cite{Shirts2007}. Care should be taken when choosing intermediate states such that there is adequate overlap in the conformation space between the end states \cite{Shirts2007, Klimovich2015}. For our simulations the number of $\lambda$'s and time per $\lambda$ were chosen through extensive trial and error. 
+
+For the standard methods we ran fixed $\lambda$ alchemical simulations. During alchemical simulations we first take a molecular dynamics step, where we calculate the inter-atomic forces and other states of the system. We then take a step in $\lambda$ space where we can apply transformations against the system state. Fixed $\lambda$ simulations spend a fixed amount of time at each intermediate $\lambda$ state. For AIM the amount of time at each intermediate $\lambda$ state is decided by the algorithm.
+
+With proper intermediate states, we are now able to use a method, such as thermodynamic integration (TI), to calculate the free energy difference between the two end states. For thermodynamic integration we are simply taking the derivative of Eq.\ \ref{eq:free_id} with respect to $\lambda$,
+
+\begin{equation}\label{eq:diffeq}
+    \frac{\partial F}{\partial \lambda} = \left< \frac{\partial U}{\partial \lambda} \right>_{NVT}
+\end{equation}
+
+This differential equation, Eq.\ \ref{eq:diffeq}, can then be integrated to give us,
+
+\begin{equation}\label{eq:ti}
+    \Delta F = \int_{\lambda = 0}^{1} \left< \frac{\partial U_{\lambda}(\vec{x})}{\partial \lambda} \right>_{\lambda} d\lambda
+\end{equation}
+
+Where the $\langle \cdot \rangle_{\lambda}$ notation represents the ensemble average at a given intermediate state, $\lambda$. We are then free to estimate the free energy by integrating Eq.\ \ref{eq:ti} after running equilibrium simulations at each intermediate $\lambda$ state.
+
+The method of exponential averaging \cite{Zwanzig1954} starts from Eq.\ \ref{eq:free} above and then adding and subtracting $\exp{(-\beta U(\vec{x}))}$ from the integral in the partition function of the numerator we end up with the final relationship,
+
+\begin{equation}\label{eq:exp}
+    \Delta F = -k_{B}T \ln \langle \exp{(-\beta U(\vec{x}))} \rangle
+\end{equation}
+
+Unlike most other methods, exponential averaging has an exact solution since it is only used to evaluate the difference between two states. However, it is the least efficient method and should not be used if difference in potential energies are much larger than $k_{B}T$ \cite{Shirts2005}.
+
+The Bennett \cite{Bennett1976} and multistate \cite{Shirts2008} Bennett acceptance ratio (BAR and MBAR) methods are far more efficient than exponential averaging and are perhaps the most efficient of the current standard free energy methods \cite{Shirts2005, Ytreberg2006}. BAR and MBAR typically achieve the same statistical precision as TI with fewer $\lambda$ states unless the integrand for TI is very smooth \cite{Monticelli2013, Ytreberg2006}. The complete derivation can be found in Bennett's paper \cite{Bennett1976} but the premise is; for sufficiently large samples $n_{i}$ of $U_{i}$ and $n_{j}$ of $U_{j}$,
+
+\begin{equation}\label{eq:bar}
+    \Delta F(i \rightarrow j) = k_{B}T \ln{\frac{\langle f(\Delta U_{ij} + C) \rangle_{j}}{\langle f(\Delta U_{ji} - C) \rangle_{i}}} + C 
+\end{equation}
+
+where C is a shift constant:
+
+\begin{equation}\label{eq:barc}
+    C = k_{B}T\ln{\frac{n_{j}}{n_{i}}}
+\end{equation} 
+
+and $f(x)$ is the Fermi function:
+
+\begin{equation}\label{eq:fermi}
+    f(x) = \frac{1}{1 + \exp{\beta x}} 
+\end{equation}
+
+Equation\ (\ref{eq:bar}) is the ratio of canonical averages of two different potentials $U_{i}$ and $U_{j}$ acting on the same configuration space meaning it requires information from two neighboring states. However, this limitation is not too much of a concern with a trivial coordinate transformation or when using dummy coordinates in alchemical simulations. MBAR, an extension of BAR, differs in that it takes data from more than two states hence the name "multistate".
+
+AIM looks to solve the same equation as thermodynamic integration (Eq.\ \ref{eq:ti}) with the exception that we are performing the approximation during the simulation as opposed to after. As a Monte Carlo method of the Metropolis form we move from state $\lambda_{old}$ to $\lambda_{new}$ with an acceptance probability
+
+\begin{equation}\label{eq:aimaccept}
+\min\{1,\exp(- \beta( U_{new} - U_{old})+\beta(F_{new} - F_{old})\}
+\end{equation}
+
+where $U_{new} - U_{old}$ is the difference in the potential energy for the old and new $\lambda$ values and $F_{new} - F_{old}$ is the current approximate for the free energy based on the running average of the $\frac{dU}{d\lambda}$ terms. AIM thus involves an independent trial move (including generation of the random number) for reaction coordinate space ($\lambda$ for our study) vs configuration space.
+
+\subsection{Implementation}
+
+AIM was implemented into GROMACS as an expanded ensemble calculation; the Hamiltonian must be calculated along with its derivative, and an expanded ensemble step must be performed for every dynamics step. In GROMACS, \texttt{nstexpanded} is the number of integration steps between attempted $\lambda$ moves changing the system Hamiltonian in expanded ensemble simulations. This value must be a multiple of \texttt{nstcalcenergy}, the number of steps before calculating the system energy, but can be greater or less than \texttt{nstdhdl}, the number of steps before calculating dHd$\lambda$. For a detailed explanation of all technical terms see: \cite{gmxmanual}. See the appendix for a direct example in usage.
+
+AIM requires the dHd$\lambda$ value from every dynamics step to be stored regardless of whether a move in $\lambda$ space is attempted. Since dHd$\lambda$ is only calculated at each step where free energies are calculated, every \texttt{nstdhdl} step, we set \texttt{nstexpanded} = \texttt{nstdhdl} = \texttt{nstcalcenergy} = 1 for AIM simulations. This further implies that \texttt{lmc-stats} functions were not used during AIM simulations because those functions modify the Hamiltonian which is counter intuitive for AIM as the algorithm requires the derivative of the unmodified Hamiltonian. Making a comparison between a modified Hamiltonian and its unmodified derivative would require re-weighting which introduces statistical noise and is entirely impractical.
+
+For the implementation of AIM with GROMACS we follow the outline given in our previous study \cite{Ytreberg2006}. 
+\begin{enumerate}
+\item Start the simulation from an equilibrated configuration at $\lambda$=0 and perform one dynamics step. 
+\item Use the Metropolis Monte Carlo sampler to choose the trial move, $\pm$ 1, in $\lambda$ space. If our $\lambda$ spacing is 0.05, a move from $\lambda$=0.35 to 0.4 or 0.3 may be attempted but not to 0.45. 
+\item Calculate the difference in potential energy between $\lambda$ trial and $\lambda$ current.
+\item Using the trapezoidal rule, we calculate the free energy difference between the running average of $\lambda$ trial and the running average $\lambda$ current. 
+\item Attempt a Monte Carlo move in $\lambda$ space with acceptance probability given in Eq.\ \ref{eq:aimaccept}.
+\item If the move is accepted then $\lambda$ is updated to the trial value, otherwise the simulations stays at current $\lambda$.
+\item The running average of the free energy at $\lambda$ is updated.
+\end{enumerate}
+
+The final step updates the average of the free energy at $\lambda$, regardless of acceptance. This is done because the running average will continue to change since each consecutive approximation is independent of the previous. The running average improves the smoothness of the underlying free energy at $\lambda$ which may be from high/low energy regions that were poorly approximated before. Thus, whenever a better approximation of the probability distribution is needed, AIM generates new approximations that targets it. 
+
+\subsection{Simulation Details}
+
+All simulations described in this paper were performed using the molecular dynamics package GROMACS 5.1.4. The simulations were carried out at 300 K and solvated in a dodecahedron box with TIP3P waters. The molecule was parameterized using the OPLS (Optimized Potential for Liquid Simulations) force field \cite{Jorgensen1996}. The OPLS force field was chosen for this study because it is known to perform well on small molecules \cite{Shirts2003}. In future studies, we anticipate using AIM on protein systems where other force fields are more appropriate such as AMBER \cite{Salomon-Ferrer2013} and CHARMM \cite{Mackerell2001}. Since all MD force fields have similar form and number of parameters, it is expected that the performance of AIM would not depend on the force field chosen. 
+
+For the GAG to GVG mutations, NaCl ions were added to keep the simulation box neutral and reach a physiologically relevant 150 mM salt concentration. Energy minimization was performed using steepest descent with 1000 steps. The system was then equilibrated using simulated annealing for 1000 ps to heat the system from 100K to 300K. For production simulations, electrostatic interactions were handled by Reaction field with a cut-off of 0.9 nm, Potential-shift-Verlet modifier and Verlet cutoff scheme. Van der Waals interactions were handled by twin range cut-offs with neighbor list cut-off of 1.15 nm and VdW cut-off 0.9 nm. The hydrogen bonds were constrained with the Shake algorithm, allowing for a longer time step of 2 fs. Long range dispersion corrections for energy and pressure were applied. 
+
+In order to determine the best distribution of intermediate states we followed a simple strategy:
+\begin{enumerate}
+\item Conduct short simulations with a small set of intermediates
+\item Generate a plot comparing slope values between AIM and fixed $\lambda$.
+\item Determine the locations of curvature in the estimate of the free energy
+\item Increase the density of intermediate states in locations of high curvature
+\item Repeat until areas of high curvature have been well explored
+\end{enumerate}
+
+\section{Methane and GAG to GVG Solvation Free Energy}
+
+The first system used here, methane in water, is detailed in a systematic study of force fields and the free energies of hydration of amino acid side chain analogs \cite{Sun1992,Lyubartsev1996,Chodera2011,Paliwal2011}.
+
+For the GAG to GVG mutation the PMX \cite{Gapsys2015} software package was used to construct the tri-peptide mutation. Using the PMX web server (http://pmx.mpibpc.mpg.de), we generated the hybrid protein structure and topology for simulations of the chosen mutation, alanine to valine.
+
+For each system, we calculated the free energy for decoupling the Lennard-Jones interactions between the atomic sites of the molecule of interest in water. For fixed $\lambda$ simulations, separate equilibrium simulations of equal length were run in order to represent each of the intermediate $\lambda$ states. The same values for $\lambda$ were used in both fixed $\lambda$ and AIM expanded ensemble simulations. The GROMACS package was altered to print out the dHd$\lambda$ averages computed by AIM to the log file when AIM is used as the \texttt{lmc-mover}. For fixed $\lambda$ simulations the free energy was estimated using an external tool, alchemical-analysis.py. AIM estimates were calculated using both the trapezoidal rule and cubic-spline. All methods and code may be made available upon request.
+
+\section{Results}
+
+\subsection{Methane}
+
+After conducting short simulations, generating plots to determine locations of high curvature and increasing $\lambda$ density in those locations, we averaged eight trial simulations of 100 ps per $\lambda$ for separate $\lambda$ distributions, Fig.\ \ref{increasinglambdas}. We found, by progressively increasing the $\lambda$ density between $\lambda$ = 0.5 and $\lambda$ = 1.0, that a distribution of 31 $\lambda$s gave us a dense enough distribution to properly compare AIM to fixed $\lambda$ methods for the methane simulations.
+
+Fig.\ \ref{methane31} is a violin plot used to visualize the distribution and probability density over the average of eight trials for each method versus time per $\lambda$. A violin plot combines a box plot and a density plot to show the shape of the distribution around the mean. The thick black bar in the center represents the interquartile range, the white dot is the median and the thin black line going vertically through the middle represents the upper and lower adjacent values. Reading a violin plot is similar to reading a density plot. The thicker parts represent high frequency values and the thinner parts represent low frequency values. The advantage of a violin plot over a box plot is that we are able to view the number of groupings in the underlying distribution of the data.
+
+In Fig.\ \ref{methane31}, for 31 $\lambda$ values at 100 ps per $\lambda$, the slower convergence of MBAR leads to two separate distributions of converging points. At 500 ps the other methods are beginning to show signs of convergence, however, we see that AIM is forming a second distribution and the width of the distribution of the other methods has not condensed or flattened along the horizontal axis, suggesting convergence has not yet occurred for any of the methods. Despite this, the average of the methods are in agreement within uncertainty, i.e. variance in the mean of the estimated free energy. At 1 ns per $\lambda$ all methods are similarly converged, indicating the larger sample size has reduced the variance from the mean. 
+
+\subsection{GAG to GVG Mutation}
+
+For the GAG to GVG mutation we first tested a distribution of 41 $\lambda$ values averaged over 8 trial simulations of 1 ps and 100 ps per $\lambda$; see Fig.\ \ref{a2vlineplot}. By reviewing the smoothness of the function we concluded that 41 $\lambda$ values was sufficient and continued the simulations for 1 ns per $\lambda$. Fig.\ \ref{a2vviolinplot} shows distribution of the convergence over time for each method. We see that AIM has mostly converged at 100 ps per $\lambda$ and all methods have similarly converged for 1 ns per $\lambda$.
+
+\section{Discussion}
+
+In the limit of infinite sampling, all rigorous methods (i.e., statistically-mechanically-based methods), performed properly with the same force field and parameters, will yield the same result within uncertainty. For fixed $\lambda$ simulations the sampling time is typically chosen to be the same for each $\lambda$ state. Thus, we are led to increase sampling time whenever convergence has not been achieved. However, if bias is introduced by an insufficient $\lambda$ distribution, in areas of high variation, increased sampling leads to radical convergence problems \cite{Shyu2009, SteinBrecher2010}. If the curvature of the underlying free energy function is large, averaging over a state space that is not dense enough to fully describe the state function propagates this bias requiring significantly increased sampling time to achieve convergence. Increasing sampling time may not be realistic when dealing with limited computational resources. Paliwal et al. \cite{Paliwal2011} make a detailed argument to why convergence may not be possible for all systems due to hard limitations in computational resources. 
+
+In particular, both TI and AIM are calculating the same slope averages and should agree very well for simple systems and reasonably long simulation times. However, due to the fact that AIM spends more time in regions of high variation, we should not expect the approximation of AIM to exactly match TI with similar sampling time until the $\lambda$ density, the number of intermediate states, has been sufficiently increased in high variance regions. Once we have chosen a sufficiently dense $\lambda$ space, reasonably long simulations should lead to highly similar approximations between these two methods.
+
+Since AIM is implemented as a Metropolis Monte Carlo \cite{Metropolis1953} expanded ensemble \cite{Lyubartsev1996} method, where the approximation of a given intermediate state is adaptively expanded whenever a better approximation of the state is needed, AIM has improved sampling over fixed $\lambda$ simulations. AIM is able to smooth the underlying free energy function by spending more time at critical points in the curvature of the Hamiltonian state space. This means that AIM requires fewer $\lambda$ states to fully explore the free energy of a system because we minimize the overall variance of the free energy estimate by adjusting the distribution of data points in each intermediate $\lambda$ state based on the acceptance criteria. This reduces the propagation of error in poorly chosen, stationary distributions. 
+
+The observant reader may note that AIM violates detailed balance, however, AIM does obey detailed balance asymptotically, i.e., once the free energy differences have converged. As simulation time increases to infinity the average free energy differences between states reach an equilibrium. 
+
+\section{Conclusion}
+
+In this report we have implemented the adaptive integration method (AIM) for calculating free energy differences in GROMACS and applied it to two molecular systems. We have shown agreement within statistical uncertainty between AIM and a suite of standard fixed $\lambda$ methods for methane solvation and an GAG to GVG mutation. We have also shown that AIM is more efficient than the other tested methods. That is, for a given amount of simulation time, AIM has a higher level of accuracy and precision compared to other methods.
+
+Further, we found that running longer simulations with too few intermediate $\lambda$ states generated results that were inconsistent between methods. The density and sampling convergence of the $\lambda$ states directly influences the agreement between all the tested methods. Since some states will contribute disproportionately to the variance of the estimate, we found that testing short simulations of different $\lambda$ densities before attempting longer simulations is a more economical use of time and resources. In particular, we found that increasing the number of intermediate $\lambda$ values between 0.5 and 1.0 allows the free energy to become independent of the number of values which allows AIM and fixed $\lambda$ results to agree within statistical uncertainty for all systems that were tested.
+
+\section{Acknowledgments}
+Support for this research was provided by the National Science Foundation (DEB 1521049 and OIA 1736253) and the Center for Modeling Complex Interactions sponsored by the National Institutes of Health (P20 GM104420). Computer resources were provided in part by the Institute for Bioinformatics and Evolutionary Studies Computational Resources Core sponsored by the National Institutes of Health (P30 GM103324).
+
+
+\pagebreak
+
+\begin{sidewaysfigure*}[htbp]
+    \centering
+    \includegraphics[width=1\textwidth]{Methane_31L_violinplotovertime}
+    \caption{Violin plot showing methane solvation results for 31 $\lambda$ values averaged over eight trials. A violin plot combines a box plot and a density plot to visualize the distribution and probability density. The graphic shows all methods have similarly converged at 1 ns per $\lambda$ for the same number of intermediate states and sample size with AIM and AIM-CUBIC showing early convergence at 750 ps per $\lambda$.}
+    \label{methane31}
+\end{sidewaysfigure*}
+\pagebreak
+
+
+\begin{figure*}[htbp]
+    \centering
+    \includegraphics[width=0.5 \textwidth]{All_lambdas_at_100ps_per_lambda}
+    \caption{Methane solvation free energy results. Eight trial simulations of 100 ps per $\lambda$ for 11, 21 and 31 $\lambda$ values. This shows how the number of $\lambda$ values were chosen to effectively compare AIM to fixed $\lambda$ simulations. The circles indicate the region where the $\lambda$ density needed to be increased.}
+    \label{increasinglambdas}
+\end{figure*}
+\pagebreak
+
+
+\begin{figure*}[htbp]
+    \centering
+    \includegraphics[width=0.5 \textwidth]{tripep_lambdas}
+    \caption{Alanine to valine mutation free energy. Eight trial simulations of 41 $\lambda$ values at 1 ps, 100 ps and 1 ns per $\lambda$. Note the smoothness of AIM versus fixed $\lambda$ simulations. AIM requires less samples than fixed $\lambda$ simulations to smooth the free energy function.}
+    \label{a2vlineplot}
+\end{figure*}
+
+\pagebreak
+
+\begin{sidewaysfigure*}[htbp]
+    \centering
+    \includegraphics[width=1\textwidth]{A2V_41L_violinplotovertime}
+    \caption{Violin plot showing alanine to valine mutation results for 41 $\lambda$ values averaged over eight trials. The graphic shows all methods have similarly converged at 1 ns per $\lambda$. Note that AIM and AIM-CUBIC converge more rapidly than other methods and are mostly converged at 100 ps per $\lambda$}
+    \label{a2vviolinplot}
+\end{sidewaysfigure*}
